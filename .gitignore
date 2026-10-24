@@ -1,3 +1,5 @@
 Inductors_GDSII/
 scro_rectangular_inductor.lym
 SCRO_Rectangular_Inductors/
+__pycache__
+Inductor_GDSII/

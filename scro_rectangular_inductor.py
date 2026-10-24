@@ -25,10 +25,10 @@ import pya
 # =============================================================================
 # PARAMETERS (in microns)
 # =============================================================================
-DEFAULT_D_OUT    = 1200.0   # Outer dimension of inductor (um)
+DEFAULT_D_OUT    = 400.0    # Outer dimension of inductor (um)
 DEFAULT_W        = 10.0     # Line width / trace thickness (um)
 DEFAULT_S        = 10.0     # Line spacing between turns (um)
-DEFAULT_TURNS    = 26.5     # Number of turns
+DEFAULT_TURNS    = 9.0      # Number of turns
 DEFAULT_PAD_SIZE = 100.0    # Probe pad dimension (um)
 DEFAULT_PITCH    = 150.0    # Pad pitch center-to-center (um)
 DEFAULT_MARGIN   = 50.0     # Die edge clearance margin (um)
@@ -46,13 +46,17 @@ def generate_spiral_points(d_out, w, s, n_turns):
     num_segments = int(round(n_turns * 4))
     directions = [(0, 1), (1, 0), (0, -1), (-1, 0)]  # Up, Right, Down, Left
 
+    # Start w / 2 lower so the outer vertical segment extends down by half a wire width
     curr_x = -d_out / 2.0 + w / 2.0
-    curr_y = -d_out / 2.0 + w / 2.0
+    curr_y = -d_out / 2.0
     points = [(curr_x, curr_y)]
 
     # Loop creating shorter and shorter lines
     for k in range(num_segments):
-        line_length = (d_out - w) - (k // 2) * p
+        if k == 0:
+            line_length = (d_out - w) + (w / 2.0)
+        else:
+            line_length = (d_out - w) - (k // 2) * p
         if line_length <= w:
             break
         dx, dy = directions[k % 4]
@@ -78,7 +82,7 @@ def build_inductor_mask(d_out=DEFAULT_D_OUT,
     and applies positive (AZ1512) and negative (AZ nLOF 2035) resist polarities.
     """
     if output_file is None:
-        output_file = f"Inductor_GDSII/{d_out}um_rectangular_inductor.gds"
+        output_file = f"Inductors_GDSII/{d_out}um_rectangular_inductor.gds"
 
     scale = 1000  # Database unit conversion (1 um = 1000 dbu)
 
@@ -139,43 +143,47 @@ def build_inductor_mask(d_out=DEFAULT_D_OUT,
     top_cell.shapes(l_metal2).insert(pya.Path(pya_m2_pts, int(round(w * scale))).polygon())
 
     # Center landing pads on both metal layers
-    center_pad_w = max(16.0, w * 2.5)
+    center_pad_w = max(30, w * 2.5)
     center_box = pya.Box(int(round((cx - center_pad_w / 2.0) * scale)), int(round((cy - center_pad_w / 2.0) * scale)),
                          int(round((cx + center_pad_w / 2.0) * scale)), int(round((cy + center_pad_w / 2.0) * scale)))
     top_cell.shapes(l_metal1).insert(center_box)
     top_cell.shapes(l_metal2).insert(center_box)
 
     # Probe Pad 1: Connected to the outer terminal of the top spiral (METAL2)
+    # Probe wire extended left by w / 2 to overlap the full width of the top spiral
     p1_box = pya.Box(int(round((p1_cx - pad_size / 2.0) * scale)), int(round((pad_cy - pad_size / 2.0) * scale)),
                      int(round((p1_cx + pad_size / 2.0) * scale)), int(round((pad_cy + pad_size / 2.0) * scale)))
     top_cell.shapes(l_metal2).insert(p1_box)
 
-    top_outer_x, top_outer_y = m2_pts[0]
+    top_outer_x = m2_pts[0][0]
+    top_outer_y = m2_pts[0][1] + (w / 2.0)
     lead1 = [
         pya.Point(int(round(p1_cx * scale)), int(round((pad_cy + pad_size / 2.0) * scale))),
         pya.Point(int(round(p1_cx * scale)), int(round(top_outer_y * scale))),
-        pya.Point(int(round(top_outer_x * scale)), int(round(top_outer_y * scale)))
+        pya.Point(int(round((top_outer_x - (w / 2.0)) * scale)), int(round(top_outer_y * scale)))
     ]
     top_cell.shapes(l_metal2).insert(pya.Path(lead1, int(round(w * scale))).polygon())
 
     # Probe Pad 2: Connected to the outer terminal of the bottom spiral (METAL1)
+    # Probe wire extended right by w / 2 to overlap the full width of the bottom spiral
     p2_box = pya.Box(int(round((p2_cx - pad_size / 2.0) * scale)), int(round((pad_cy - pad_size / 2.0) * scale)),
                      int(round((p2_cx + pad_size / 2.0) * scale)), int(round((pad_cy + pad_size / 2.0) * scale)))
     top_cell.shapes(l_metal1).insert(p2_box)
     top_cell.shapes(l_metal2).insert(p2_box)  # Surface pad for probe needle contact
 
-    bot_outer_x, bot_outer_y = m1_pts[0]
+    bot_outer_x = m1_pts[0][0]
+    bot_outer_y = m1_pts[0][1] + (w / 2.0)
     lead2 = [
         pya.Point(int(round(p2_cx * scale)), int(round((pad_cy + pad_size / 2.0) * scale))),
         pya.Point(int(round(p2_cx * scale)), int(round(bot_outer_y * scale))),
-        pya.Point(int(round(bot_outer_x * scale)), int(round(bot_outer_y * scale)))
+        pya.Point(int(round((bot_outer_x + (w / 2.0)) * scale)), int(round(bot_outer_y * scale)))
     ]
     top_cell.shapes(l_metal1).insert(pya.Path(lead2, int(round(w * scale))).polygon())
 
     # 8. VIA (Mask 7: M7_Vias — AZ1512 Positive Photoresist):
     # Because AZ1512 is positive resist, drawn polygons keep photoresist on the wafer
     # and cutout holes open windows for BOE to etch through the 1 um PVD SiO2 ILD.
-    via_w = 6.0
+    via_w = 10.0
     center_via = pya.Box(int(round((cx - via_w / 2.0) * scale)), int(round((cy - via_w / 2.0) * scale)),
                          int(round((cx + via_w / 2.0) * scale)), int(round((cy + via_w / 2.0) * scale)))
 
